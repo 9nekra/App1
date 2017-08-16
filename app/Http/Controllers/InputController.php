@@ -1,20 +1,22 @@
 <?php
 
+
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use App\Http\Requests;
-use phpDocumentor\Reflection\Types\Nullable;
-
-require 'C:\Users\MagmaDiver\app\vendor/autoload.php'; //надо PATH поковырять
+//use phpDocumentor\Reflection\Types\Nullable;
+//use Illuminate\Http\Request;
+//require 'C:\Users\MagmaDiver\app\vendor/autoload.php'; //надо PATH поковырять
+//use App\Http\Requests;
+use Elasticsearch\Namespaces;
 use Elasticsearch\ClientBuilder;
+use Elasticsearch\Namespaces\IndicesNamespace;
+//analyze метод тут
+require_once 'C:\Users\MagmaDiver\app\vendor\elasticsearch\elasticsearch\src\Elasticsearch\Namespaces\IndicesNamespace.php';
 
 ini_set('max_execution_time', 36000);
 
-
 class InputController extends Controller
 {
-    //
 //  функция для деления строки на слова по пробелам и тире
     function multiexplode($delimiters, $string)
     {
@@ -36,7 +38,6 @@ class InputController extends Controller
         return $resultT;
 
     }
-
     // функция для удаления повторов из 2d массива
     function super_unique($array)
     {
@@ -50,7 +51,6 @@ class InputController extends Controller
 
         return $result;
     }
-
     // функция для сортировки массива по ключу
     function array_sort($array, $on, $order = SORT_ASC)
     {
@@ -86,7 +86,24 @@ class InputController extends Controller
 
         return $new_array;
     }
-
+    //функция для вызова аналайзера через cURL
+    function SendToAnalyzer($stringToAnalyze)
+    {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, "localhost:9200/_analyze?pretty");
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, "\n{\n  \"text\" : \"$stringToAnalyze\"\n}\n");
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "GET");
+        $headers = array();
+        $headers[] = "Content-Type: application/json";
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        $result = curl_exec($ch);
+        if (curl_errno($ch)) {
+            echo 'Error:' . curl_error($ch);
+        }
+        curl_close($ch);
+        return $result;
+    }
 
     public function index()
     {
@@ -94,16 +111,12 @@ class InputController extends Controller
         return view('welcome');
     }
 
-
     public function process()
     {
-
         $client = ClientBuilder::create()->build();
-
         if ($client->indices()->exists(['index' => 'stork'])) {
             $client->indices()->delete(['index' => 'stork']);
         }
-
         $params = [
             'index' => 'stork',
             'body' => [
@@ -167,6 +180,7 @@ class InputController extends Controller
         $result = $client->indices()->create($params);
         if ($result['acknowledged'] != true) {
             //TODO что-то не то
+            echo 'Что-то не так с еластиком';
             dd($result);
         }
         echo "</br>";
@@ -176,30 +190,35 @@ class InputController extends Controller
         $input = $_POST["input"];
         $inputstr = explode("\n", $input);
         $inputstr = array_filter($inputstr);
-        $tt=0;
+        $cycleCount=0;
+        $tokensStorage=array();
         foreach ($inputstr as $inputline) {
             $params = [
                 'index' => 'stork',
                 'type' => 'product',
-                'id'=>$tt,
+                'id'=>$cycleCount,
                 'body' => ['product_name' => $inputline]
             ];
-
-            $result1 = $client->index($params);
-            print_r($result1);
+            $indexedDoc = $client->index($params);
             echo "</br>";
             $params = [
                 'index' => 'stork',
                 'type' => 'product',
-                'id'=>$tt
+                'id'=>$cycleCount
             ];
-
-            $response = $client->get($params);
-            print_r($response);
-            $tt++;
-            echo "</br>";
-
+            $IndexResponse = $client->get($params);
+            $indexedName=trim($IndexResponse['_source']['product_name']);
+            $analyzedName=$this->SendToAnalyzer($indexedName);
+//            $a1=$this->analyze($indexedName);
+            dd($analyzedName);
+            $cycleCount++;
         }
+
+
+
+
+
+
 
 
 //
