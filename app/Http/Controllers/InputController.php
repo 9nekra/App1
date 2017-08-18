@@ -10,8 +10,9 @@ namespace App\Http\Controllers;
 use Elasticsearch\Namespaces;
 use Elasticsearch\ClientBuilder;
 use Elasticsearch\Namespaces\IndicesNamespace;
+
 //analyze метод тут
-require_once 'C:\Users\MagmaDiver\app\vendor\elasticsearch\elasticsearch\src\Elasticsearch\Namespaces\IndicesNamespace.php';
+//require_once 'C:\Users\MagmaDiver\app\vendor\elasticsearch\elasticsearch\src\Elasticsearch\Namespaces\IndicesNamespace.php';
 
 ini_set('max_execution_time', 36000);
 
@@ -21,23 +22,26 @@ class InputController extends Controller
     function multiexplode($delimiters, $string)
     {
 
-        $ready = str_replace($delimiters, $delimiters[0], $string);
+        $ready  = str_replace($delimiters, $delimiters[0], $string);
         $launch = explode($delimiters[0], $ready);
+
         return $launch;
     }
 
     // функция для восстановки нормальных ключей при выборочном заполнении массива
     function setOrder($array)
     {
-        $countX = 0;
-        $resultT = array();
+        $countX  = 0;
+        $resultT = [];
         foreach ($array as $temp1) {
             $resultT[$countX] = rtrim($temp1);
             $countX++;
         }
+
         return $resultT;
 
     }
+
     // функция для удаления повторов из 2d массива
     function super_unique($array)
     {
@@ -51,11 +55,12 @@ class InputController extends Controller
 
         return $result;
     }
+
     // функция для сортировки массива по ключу
     function array_sort($array, $on, $order = SORT_ASC)
     {
-        $new_array = array();
-        $sortable_array = array();
+        $new_array      = [];
+        $sortable_array = [];
 
         if (count($array) > 0) {
             foreach ($array as $k => $v) {
@@ -86,23 +91,41 @@ class InputController extends Controller
 
         return $new_array;
     }
+
     //функция для вызова аналайзера через cURL
     function SendToAnalyzer($stringToAnalyze)
     {
+        $client = ClientBuilder::create()->build();
+
+        $params = [
+            'index' => 'stork',
+            'field' => 'product_name',
+            'text'  => $stringToAnalyze,
+        ];
+
+        $result = $client->indices()->analyze($params);
+        dd($result);
+
+
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, "localhost:9200/_analyze?pretty");
+        curl_setopt($ch, CURLOPT_URL, "localhost:9200/stork/_analyze?pretty");
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, "\n{\n  \"text\" : \"$stringToAnalyze\"\n}\n");
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "GET");
-        $headers = array();
-        $headers[] = "Content-Type: application/json";
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(
+            [
+                'field' => 'product_name',
+                'text'  => $stringToAnalyze,
+            ]));
+
         $result = curl_exec($ch);
+
         if (curl_errno($ch)) {
-            echo 'Error:' . curl_error($ch);
+            echo 'Error:'.curl_error($ch);
         }
         curl_close($ch);
-        return $result;
+
+        return json_decode($result);
     }
 
     public function index()
@@ -114,111 +137,107 @@ class InputController extends Controller
     public function process()
     {
         $client = ClientBuilder::create()->build();
-        if ($client->indices()->exists(['index' => 'stork'])) {
-            $client->indices()->delete(['index' => 'stork']);
-        }
-        $params = [
-            'index' => 'stork',
-            'body' => [
-                'mappings' => [
-                    'product' => [
-                        'properties' => [
-                            'product_name' => [
-                                'type' => 'text',
-                                'analyzer' => 'my_analyzer',
-                            ],
+
+        /*        if ($client->indices()->exists(['index' => 'stork'])) {
+                    $client->indices()->delete(['index' => 'stork']);
+                }
+                $params = [
+                    'index' => 'stork',
+                    'body' => [
+                        'mappings' => [
+                            'product' => [
+                                'properties' => [
+                                    'product_name' => [
+                                        'type' => 'text',
+                                        'analyzer' => 'my_analyzer',
+                                    ],
+                                ],
+                            ]
                         ],
-                    ]
-                ],
-                "settings" => [
-                    "analysis" => [
-                        "analyzer" => [
-                            "my_analyzer" => [
-                                "tokenizer" => "standard",
+                        "settings" => [
+                            "analysis" => [
+                                "analyzer" => [
+                                    "my_analyzer" => [
+                                        "tokenizer" => "standard",
+                                        "char_filter" => [
+                                            "xEnd_Replace",
+                                            "xRus_Replace",
+                                            "eRus_Replace",
+                                            "dot_Replace",
+                                        ],
+                                        "filter" => [
+                                            "lowercase"
+                                        ],
+                                    ],
+                                ],
                                 "char_filter" => [
-                                    "xEnd_Replace",
-                                    "xRus_Replace",
-                                    "eRus_Replace",
-                                    "dot_Replace",
+                                    "xEnd_Replace" => [
+                                        "type" => "pattern_replace",
+                                        "pattern" => "(\\d+)x(?=\\d)",
+                                        "replacement" => "$1 ",
+                                        "flags" => 'CASE_INSENSITIVE',
+                                    ],
+                                    "xRus_Replace" => [
+                                        "type" => "pattern_replace",
+                                        "pattern" => "(\\d+)х(?=\\d)",
+                                        "replacement" => "$1 ",
+                                        "flags" => 'CASE_INSENSITIVE|UNICODE_CASE',
+                                    ],
+                                    "eRus_Replace" => [
+                                        "type" => "pattern_replace",
+                                        "pattern" => "ё",
+                                        "replacement" => "е",
+                                        "flags" => 'CASE_INSENSITIVE|UNICODE_CASE',
+                                    ],
+                                    "dot_Replace" => [
+                                        "type" => "pattern_replace",
+                                        "pattern" => "(\\d+),(?=\\d)",
+                                        "replacement" => "$1.",
+                                        "flags" => 'CASE_INSENSITIVE|UNICODE_CASE',
+                                    ],
                                 ],
-                                "filter" => [
-                                    "lowercase"
-                                ],
-                            ],
-                        ],
-                        "char_filter" => [
-                            "xEnd_Replace" => [
-                                "type" => "pattern_replace",
-                                "pattern" => "(\\d+)x(?=\\d)",
-                                "replacement" => "$1 ",
-                                "flags" => 'CASE_INSENSITIVE',
-                            ],
-                            "xRus_Replace" => [
-                                "type" => "pattern_replace",
-                                "pattern" => "(\\d+)х(?=\\d)",
-                                "replacement" => "$1 ",
-                                "flags" => 'CASE_INSENSITIVE|UNICODE_CASE',
-                            ],
-                            "eRus_Replace" => [
-                                "type" => "pattern_replace",
-                                "pattern" => "ё",
-                                "replacement" => "е",
-                                "flags" => 'CASE_INSENSITIVE|UNICODE_CASE',
-                            ],
-                            "dot_Replace" => [
-                                "type" => "pattern_replace",
-                                "pattern" => "(\\d+),(?=\\d)",
-                                "replacement" => "$1.",
-                                "flags" => 'CASE_INSENSITIVE|UNICODE_CASE',
                             ],
                         ],
                     ],
-                ],
-            ],
-        ];
+                ];
 
-        $result = $client->indices()->create($params);
-        if ($result['acknowledged'] != true) {
-            //TODO что-то не то
-            echo 'Что-то не так с еластиком';
-            dd($result);
-        }
-        echo "</br>";
-        print_r($result);
+                $result = $client->indices()->create($params);
+                if ($result['acknowledged'] != true) {
+                    //TODO что-то не то
+                    echo 'Что-то не так с еластиком';
+                    dd($result);
+                }
+                echo "</br>";
+                print_r($result);*/
+
         echo "</br>";
         //ввожу данные
-        $input = $_POST["input"];
-        $inputstr = explode("\n", $input);
-        $inputstr = array_filter($inputstr);
-        $cycleCount=0;
-        $tokensStorage=array();
+        $input         = $_POST["input"];
+        $inputstr      = explode("\n", $input);
+        $inputstr      = array_filter($inputstr);
+        $cycleCount    = 0;
+        $tokensStorage = [];
         foreach ($inputstr as $inputline) {
-            $params = [
+            $params     = [
                 'index' => 'stork',
-                'type' => 'product',
-                'id'=>$cycleCount,
-                'body' => ['product_name' => $inputline]
+                'type'  => 'product',
+                'id'    => $cycleCount,
+                'body'  => ['product_name' => $inputline],
             ];
             $indexedDoc = $client->index($params);
             echo "</br>";
-            $params = [
+            $params        = [
                 'index' => 'stork',
-                'type' => 'product',
-                'id'=>$cycleCount
+                'type'  => 'product',
+                'id'    => $cycleCount,
             ];
             $IndexResponse = $client->get($params);
-            $indexedName=trim($IndexResponse['_source']['product_name']);
-            $analyzedName=$this->SendToAnalyzer($indexedName);
+            $indexedName   = trim($IndexResponse['_source']['product_name']);
+            $analyzedName  = $this->SendToAnalyzer($indexedName);
 //            $a1=$this->analyze($indexedName);
             dd($analyzedName);
             $cycleCount++;
         }
-
-
-
-
-
-
 
 
 //
